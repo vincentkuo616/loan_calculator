@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>多合約借貸利息與本金沖銷試算小工具 (事件驅動版)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen p-4 md:p-8">
+  <div class="max-w-7xl mx-auto space-y-6">
+    
+    <!-- 頂部標題 -->
+    <header class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div>
+        <h1 class="text-2xl font-bold text-slate-900 flex items-center gap-2">
+          <span>📊</span> 多合約借貸還款與利息沖銷試算工具
+        </h1>
+        <p class="text-sm text-slate-500 mt-1">
+          規則：ACT/365 (算頭不算尾) ｜ 初始本金計息 ｜ 未生效合約不參與分配 ｜ 支援非還款日及單月多次還款
+        </p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="resetToDefault()" class="px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition">
+          🔄 載入預設範例
+        </button>
+        <button onclick="exportToCSV()" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition">
+          📥 匯出 CSV 報表
+        </button>
+      </div>
+    </header>
+
+    <!-- 區塊一：合約設定與還款記錄管理 -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      
+      <!-- 合約清單 (佔 7 欄) -->
+      <div class="lg:col-span-7 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+        <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+          <h2 class="text-lg font-bold text-slate-800">📋 借貸合約參數</h2>
+          <button onclick="addContract()" class="text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 font-semibold transition">
+            + 新增合約
+          </button>
+        </div>
+        
+        <div id="contracts-container" class="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+          <!-- 動態載入合約項目 -->
+        </div>
+      </div>
+
+      <!-- 還款記錄管理 (佔 5 欄) -->
+      <div class="lg:col-span-5 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4 flex flex-col">
+        <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+          <div>
+            <h2 class="text-lg font-bold text-slate-800">💰 還款事件清單</h2>
+            <p class="text-xs text-slate-400">可自由增刪非還款日或單月多次還款</p>
+          </div>
+          <div class="flex gap-1.5">
+            <button onclick="generateStandardSchedule()" class="text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-2.5 py-1.5 rounded-lg border border-indigo-200 font-medium transition" title="生成每月10號至最晚合約結算期">
+              📅 產生標準期
+            </button>
+            <button onclick="addRepaymentRow()" class="text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg border border-emerald-200 font-semibold transition">
+              + 新增還款
+            </button>
+          </div>
+        </div>
+
+        <!-- 還款記錄滾動清單 -->
+        <div id="repayments-container" class="space-y-2 max-h-[340px] overflow-y-auto pr-1 flex-1">
+          <!-- 動態載入還款行 -->
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 區塊二：數據總覽指標 (KPI Cards) -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div class="text-xs font-medium text-slate-500">總初始本金</div>
+        <div id="stat-total-principal" class="text-xl font-bold text-slate-800 mt-1">$0</div>
+      </div>
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div class="text-xs font-medium text-slate-500">累計實還總額</div>
+        <div id="stat-total-paid" class="text-xl font-bold text-indigo-600 mt-1">$0</div>
+      </div>
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div class="text-xs font-medium text-slate-500">剩餘未還本金</div>
+        <div id="stat-unpaid-principal" class="text-xl font-bold text-emerald-600 mt-1">$0</div>
+      </div>
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div class="text-xs font-medium text-slate-500">剩餘累積欠息</div>
+        <div id="stat-unpaid-interest" class="text-xl font-bold text-rose-600 mt-1">$0</div>
+      </div>
+    </div>
+
+    <!-- 區塊三：每期/每次還款沖銷明細報表 -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="p-6 border-b border-slate-200 flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+        <div>
+          <h2 class="text-lg font-bold text-slate-900">📑 還款沖銷明細時間軸</h2>
+          <p class="text-xs text-slate-500 mt-0.5">黃色徽章 <span class="inline-block px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded font-semibold">+1</span> 代表因整數分配尾差補入該合約</p>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs text-slate-600 border-collapse">
+          <thead class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase tracking-wider">
+            <tr id="table-header-row">
+              <th class="p-3 text-center w-12">#</th>
+              <th class="p-3 w-28">還款日期</th>
+              <th class="p-3 w-28 text-right">實還金額</th>
+              <!-- 動態生成各合約欄位 -->
+              <th class="p-3 border-l border-slate-200 text-right w-40">全案未還餘額 (息 / 本)</th>
+            </tr>
+          </thead>
+          <tbody id="table-body" class="divide-y divide-slate-200">
+            <!-- 動態生成每期數據 -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // 預設合約
+    const defaultContracts = [
+      { id: 1, name: "合約 1", principal: 600000, start: "2024-01-23", end: "2025-01-22", type: "ANNUAL", value: 10 },
+      { id: 2, name: "合約 2", principal: 700000, start: "2024-02-28", end: "2025-02-28", type: "ANNUAL", value: 10 },
+      { id: 3, name: "合約 3", principal: 600000, start: "2024-04-01", end: "2025-03-31", type: "FIXED", value: 7000 }
+    ];
+
+    // 預設還款列表 (前三期為範例金額，後續預設為0待填寫)
+    const defaultRepayments = [
+      { id: "r1", date: "2024-02-10", amount: 5000 },
+      { id: "r2", date: "2024-03-10", amount: 5000 },
+      { id: "r3", date: "2024-04-10", amount: 12000 }
+    ];
+
+    let contracts = JSON.parse(JSON.stringify(defaultContracts));
+    let repayments = JSON.parse(JSON.stringify(defaultRepayments));
+
+    // 日期工具
+    function parseDate(dateStr) {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      return new Date(y, m - 1, d, 12, 0, 0);
+    }
+
+    function formatDate(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}/${m}/${day}`;
+    }
+
+    function formatNumber(num) {
+      return Number(Math.round(num)).toLocaleString();
+    }
+
+    // ACT/365 算頭不算尾
+    function getDaysDiff(dStart, dEnd) {
+      if (dEnd <= dStart) return 0;
+      const ms = dEnd.getTime() - dStart.getTime();
+      return Math.round(ms / (1000 * 60 * 60 * 24));
+    }
+
+    // 重設範例
+    function resetToDefault() {
+      contracts = JSON.parse(JSON.stringify(defaultContracts));
+      repayments = JSON.parse(JSON.stringify(defaultRepayments));
+      renderAll();
+    }
+
+    // 合約管理
+    function addContract() {
+      const nextId = contracts.length > 0 ? Math.max(...contracts.map(c => c.id)) + 1 : 1;
+      contracts.push({
+        id: nextId,
+        name: `合約 ${nextId}`,
+        principal: 500000,
+        start: "2024-01-01",
+        end: "2025-01-01",
+        type: "ANNUAL",
+        value: 10
+      });
+      renderAll();
+    }
+
+    function removeContract(id) {
+      if (contracts.length <= 1) {
+        alert("至少需保留一筆合約！");
+        return;
+      }
+      contracts = contracts.filter(c => c.id !== id);
+      renderAll();
+    }
+
+    function updateContract(id, field, value) {
+      const c = contracts.find(x => x.id === id);
+      if (!c) return;
+      if (field === 'principal' || field === 'value') {
+        c[field] = Number(value) || 0;
+      } else {
+        c[field] = value;
+      }
+      renderAll();
+    }
+
+    // 還款事件管理
+    function addRepaymentRow() {
+      const lastRep = repayments[repayments.length - 1];
+      let newDate = "2024-05-10";
+      if (lastRep) {
+        const d = parseDate(lastRep.date);
+        d.setMonth(d.getMonth() + 1);
+        newDate = d.toISOString().slice(0, 10);
+      }
+      repayments.push({
+        id: 'r_' + Date.now() + Math.random().toString(36).substr(2, 4),
+        date: newDate,
+        amount: 0
+      });
+      renderAll();
+    }
+
+    function removeRepayment(id) {
+      repayments = repayments.filter(r => r.id !== id);
+      renderAll();
+    }
+
+    function updateRepayment(id, field, value) {
+      const r = repayments.find(x => x.id === id);
+      if (!r) return;
+      if (field === 'amount') {
+        r.amount = Number(value) || 0;
+      } else {
+        r.date = value;
+      }
+      renderAll();
+    }
+
+    // 一鍵生成標準 14 期還款日 (每月10號至最晚收尾期 2025/03/10)
+    function generateStandardSchedule() {
+      repayments = [
+        { id: "r1", date: "2024-02-10", amount: 5000 },
+        { id: "r2", date: "2024-03-10", amount: 5000 },
+        { id: "r3", date: "2024-04-10", amount: 12000 },
+        { id: "r4", date: "2024-05-10", amount: 0 },
+        { id: "r5", date: "2024-06-10", amount: 0 },
+        { id: "r6", date: "2024-07-10", amount: 0 },
+        { id: "r7", date: "2024-08-10", amount: 0 },
+        { id: "r8", date: "2024-09-10", amount: 0 },
+        { id: "r9", date: "2024-10-10", amount: 0 },
+        { id: "r10", date: "2024-11-10", amount: 0 },
+        { id: "r11", date: "2024-12-10", amount: 0 },
+        { id: "r12", date: "2025-01-10", amount: 0 },
+        { id: "r13", date: "2025-02-10", amount: 0 },
+        { id: "r14", date: "2025-03-10", amount: 0 }
+      ];
+      renderAll();
+    }
+
+    // 渲染合約輸入卡片
+    function renderContractsUI() {
+      const container = document.getElementById('contracts-container');
+      container.innerHTML = contracts.map(c => `
+        <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <input type="text" value="${c.name}" class="font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none text-sm w-28"
+              onchange="updateContract(${c.id}, 'name', this.value)" />
+            <button onclick="removeContract(${c.id})" class="text-rose-500 hover:text-rose-700 text-xs px-2 py-0.5">刪除</button>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <div>
+              <span class="text-slate-500 block">借款本金</span>
+              <input type="number" value="${c.principal}" class="w-full border border-slate-300 rounded px-2 py-1 mt-0.5"
+                onchange="updateContract(${c.id}, 'principal', this.value)" />
+            </div>
+            <div>
+              <span class="text-slate-500 block">利息模式</span>
+              <select class="w-full border border-slate-300 rounded px-2 py-1 mt-0.5"
+                onchange="updateContract(${c.id}, 'type', this.value)">
+                <option value="ANNUAL" ${c.type === 'ANNUAL' ? 'selected' : ''}>年息 (%)</option>
+                <option value="FIXED" ${c.type === 'FIXED' ? 'selected' : ''}>固定金額/期</option>
+              </select>
+            </div>
+            <div>
+              <span class="text-slate-500 block">${c.type === 'ANNUAL' ? '年利率 (%)' : '每期固定利息'}</span>
+              <input type="number" value="${c.value}" class="w-full border border-slate-300 rounded px-2 py-1 mt-0.5"
+                onchange="updateContract(${c.id}, 'value', this.value)" />
+            </div>
+            <div>
+              <span class="text-slate-500 block">起訖日期</span>
+              <div class="flex items-center gap-1 mt-0.5">
+                <input type="date" value="${c.start}" class="w-full border border-slate-300 rounded px-1 py-1 text-[11px]"
+                  onchange="updateContract(${c.id}, 'start', this.value)" />
+                <span class="text-slate-400">~</span>
+                <input type="date" value="${c.end}" class="w-full border border-slate-300 rounded px-1 py-1 text-[11px]"
+                  onchange="updateContract(${c.id}, 'end', this.value)" />
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 渲染還款事件清單
+    function renderRepaymentsUI() {
+      const container = document.getElementById('repayments-container');
+      container.innerHTML = repayments.map((r, idx) => `
+        <div class="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+          <span class="text-slate-400 font-mono w-5 text-center">${idx + 1}</span>
+          <input type="date" value="${r.date}" class="border border-slate-300 rounded px-2 py-1 text-slate-700 outline-none w-32"
+            onchange="updateRepayment('${r.id}', 'date', this.value)" />
+          <div class="relative flex-1">
+            <span class="absolute left-2 top-1 text-slate-400">$</span>
+            <input type="number" value="${r.amount}" placeholder="還款金額" class="w-full pl-5 pr-2 py-1 border border-slate-300 rounded text-slate-800 font-semibold outline-none"
+              onchange="updateRepayment('${r.id}', 'amount', this.value)" />
+          </div>
+          <button onclick="removeRepayment('${r.id}')" class="text-slate-400 hover:text-rose-500 px-1 py-1 text-sm" title="刪除此筆">✕</button>
+        </div>
+      `).join('');
+    }
+
+    // 比例分配與尾差平帳函式
+    function allocateProRata(availableAmount, targets) {
+      const totalTarget = targets.reduce((sum, t) => sum + t.targetAmount, 0);
+      if (totalTarget === 0 || availableAmount <= 0) {
+        return targets.map(t => ({ id: t.id, paid: 0, adjusted: 0 }));
+      }
+
+      if (availableAmount >= totalTarget) {
+        return targets.map(t => ({ id: t.id, paid: t.targetAmount, adjusted: 0 }));
+      }
+
+      let distributed = 0;
+      let results = targets.map(t => {
+        const exact = (availableAmount * t.targetAmount) / totalTarget;
+        const floorVal = Math.floor(exact);
+        distributed += floorVal;
+        return {
+          id: t.id,
+          targetAmount: t.targetAmount,
+          paid: floorVal,
+          fraction: exact - floorVal,
+          adjusted: 0
+        };
+      });
+
+      // 尾差補入 targetAmount 最大者
+      let remainder = availableAmount - distributed;
+      if (remainder > 0) {
+        const sortedIndices = results
+          .map((item, idx) => ({ idx, target: item.targetAmount, fraction: item.fraction }))
+          .sort((a, b) => b.target - a.target || b.fraction - a.fraction);
+
+        for (let i = 0; i < remainder; i++) {
+          const targetIndex = sortedIndices[i % sortedIndices.length].idx;
+          results[targetIndex].paid += 1;
+          results[targetIndex].adjusted += 1;
+        }
+      }
+
+      return results;
+    }
+
+    // 核心引擎：按時間線計算所有還款事件
+    function calculateSchedule() {
+      if (contracts.length === 0 || repayments.length === 0) {
+        return { events: [], contracts: contracts };
+      }
+
+      // 1. 將所有還款事件按日期由小到大排序 (Chronological sort)
+      const sortedRepayments = [...repayments].sort((a, b) => parseDate(a.date) - parseDate(b.date));
+
+      // 2. 初始化各合約狀態
+      let contractState = {};
+      contracts.forEach(c => {
+        contractState[c.id] = {
+          unpaidPrincipal: c.principal,
+          unpaidInterest: 0,
+          lastInterestCalcDate: parseDate(c.start),
+          // 針對固定利息合約，預先產生 12 期結算里程碑（每月10號）
+          fixedMilestones: []
+        };
+
+        if (c.type === 'FIXED') {
+          const cStart = parseDate(c.start);
+          let curYear = cStart.getFullYear();
+          let curMonth = cStart.getMonth();
+          // 若起始日超過10號，第一個里程碑為次月10號
+          let firstM = new Date(curYear, curMonth, 10, 12, 0, 0);
+          if (firstM < cStart) {
+            curMonth += 1;
+            firstM = new Date(curYear, curMonth, 10, 12, 0, 0);
+          }
+          for (let m = 0; m < 12; m++) {
+            contractState[c.id].fixedMilestones.push({
+              date: new Date(curYear, curMonth + m, 10, 12, 0, 0),
+              billed: false
+            });
+          }
+        }
+      });
+
+      let eventsOutput = [];
+
+      for (let eIdx = 0; eIdx < sortedRepayments.length; eIdx++) {
+        const rep = sortedRepayments[eIdx];
+        const eventDate = parseDate(rep.date);
+        const cashAmount = rep.amount;
+
+        // 計算各合約當下的狀態與利息
+        let currentDemands = [];
+
+        contracts.forEach(c => {
+          const state = contractState[c.id];
+          const cStart = parseDate(c.start);
+          const cEnd = parseDate(c.end);
+
+          // 核心檢查 1：合約是否已生效？(還款日必須 >= 起始日)
+          const isStarted = eventDate >= cStart;
+          let interestDueThisTime = 0;
+          let days = 0;
+
+          if (isStarted && state.unpaidPrincipal > 0) {
+            if (c.type === 'ANNUAL') {
+              // 計息終點取還款日與到期日較小者
+              let calcEnd = eventDate > cEnd ? cEnd : eventDate;
+              let calcStart = state.lastInterestCalcDate;
+
+              if (calcStart < calcEnd) {
+                days = getDaysDiff(calcStart, calcEnd);
+                // 初始本金計息
+                interestDueThisTime = Math.round((c.principal * (c.value / 100) * days) / 365);
+                state.lastInterestCalcDate = calcEnd;
+              }
+            } else if (c.type === 'FIXED') {
+              // 檢查是否有未請領且已到達的月里程碑
+              state.fixedMilestones.forEach(m => {
+                if (!m.billed && eventDate >= m.date) {
+                  interestDueThisTime += c.value;
+                  m.billed = true;
+                }
+              });
+            }
+          }
+
+          currentDemands.push({
+            contractId: c.id,
+            isStarted: isStarted,
+            overdueInterest: isStarted ? state.unpaidInterest : 0,
+            currentInterest: interestDueThisTime,
+            unpaidPrincipal: isStarted ? state.unpaidPrincipal : 0,
+            actualUnpaidPrincipal: state.unpaidPrincipal,
+            days: days
+          });
+        });
+
+        // 瀑布流分配還款現金
+        let cashLeft = cashAmount;
+
+        // 階段一：償還前期累積未還利息 (僅限已生效合約)
+        const overdueTargets = currentDemands.map(d => ({
+          id: d.contractId,
+          targetAmount: d.overdueInterest
+        }));
+        const overdueAlloc = allocateProRata(cashLeft, overdueTargets);
+        const overduePaidTotal = overdueAlloc.reduce((s, a) => s + a.paid, 0);
+        cashLeft -= overduePaidTotal;
+
+        // 階段二：償還當期應計利息
+        const currentIntTargets = currentDemands.map(d => ({
+          id: d.contractId,
+          targetAmount: d.currentInterest
+        }));
+        const currentIntAlloc = allocateProRata(cashLeft, currentIntTargets);
+        const currentIntPaidTotal = currentIntAlloc.reduce((s, a) => s + a.paid, 0);
+        cashLeft -= currentIntPaidTotal;
+
+        // 階段三：償還本金 (僅限已生效且仍有欠本之合約，依剩餘未還本金比例)
+        const principalTargets = currentDemands.map(d => ({
+          id: d.contractId,
+          targetAmount: d.unpaidPrincipal // 未生效者為 0
+        }));
+        const principalAlloc = allocateProRata(cashLeft, principalTargets);
+        const principalPaidTotal = principalAlloc.reduce((s, a) => s + a.paid, 0);
+        cashLeft -= principalPaidTotal;
+
+        // 結算各合約並更新全局狀態
+        let contractRowResults = {};
+        contracts.forEach(c => {
+          const demand = currentDemands.find(d => d.contractId === c.id);
+          const oA = overdueAlloc.find(a => a.id === c.id);
+          const iA = currentIntAlloc.find(a => a.id === c.id);
+          const pA = principalAlloc.find(a => a.id === c.id);
+
+          const totIntDue = demand.overdueInterest + demand.currentInterest;
+          const totIntPaid = oA.paid + iA.paid;
+          const newUnpaidInt = totIntDue - totIntPaid;
+
+          const princPaid = pA.paid;
+          const newUnpaidPrinc = demand.actualUnpaidPrincipal - princPaid;
+
+          // 更新狀態
+          contractState[c.id].unpaidInterest = newUnpaidInt;
+          contractState[c.id].unpaidPrincipal = newUnpaidPrinc;
+
+          contractRowResults[c.id] = {
+            isStarted: demand.isStarted,
+            days: demand.days,
+            overdueInterest: demand.overdueInterest,
+            currentInterest: demand.currentInterest,
+            totalInterestDue: totIntDue,
+            interestPaid: totIntPaid,
+            unpaidInterest: newUnpaidInt,
+
+            principalDue: demand.actualUnpaidPrincipal,
+            principalPaid: princPaid,
+            unpaidPrincipal: newUnpaidPrinc,
+
+            adjusted: oA.adjusted + iA.adjusted + pA.adjusted
+          };
+        });
+
+        eventsOutput.push({
+          index: eIdx + 1,
+          id: rep.id,
+          date: eventDate,
+          payment: cashAmount,
+          contractResults: contractRowResults
+        });
+      }
+
+      return { events: eventsOutput, contracts: contracts };
+    }
+
+    // 渲染全畫面
+    function renderAll() {
+      renderContractsUI();
+      renderRepaymentsUI();
+
+      const { events, contracts: curContracts } = calculateSchedule();
+
+      // 更新表頭
+      const headerRow = document.getElementById('table-header-row');
+      headerRow.innerHTML = `
+        <th class="p-3 text-center w-12">#</th>
+        <th class="p-3 w-28">還款日期</th>
+        <th class="p-3 w-32 text-right">實還金額</th>
+        ${curContracts.map(c => `
+          <th class="p-3 border-l border-slate-200 text-center min-w-[200px]">
+            <div class="font-bold text-slate-800">${c.name}</div>
+            <div class="text-[10px] text-slate-400 font-normal">待還 (息/本) ➔ 實還 (息/本) ➔ 未還 (息/本)</div>
+          </th>
+        `).join('')}
+        <th class="p-3 border-l border-slate-200 text-right w-40">全案未還餘額 (息 / 本)</th>
+      `;
+
+      // 渲染表身
+      const tbody = document.getElementById('table-body');
+      tbody.innerHTML = events.map(e => {
+        let periodUnpaidInt = 0;
+        let periodUnpaidPrinc = 0;
+
+        const colsHtml = curContracts.map(c => {
+          const res = e.contractResults[c.id];
+          periodUnpaidInt += res.unpaidInterest;
+          periodUnpaidPrinc += res.unpaidPrincipal;
+
+          // 若合約尚未開始
+          if (!res.isStarted) {
+            return `
+              <td class="p-3 border-l border-slate-200 text-center align-middle bg-slate-50/50">
+                <span class="inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-slate-200/60 text-slate-400">
+                  未起息 (待生效)
+                </span>
+                <div class="text-[10px] text-slate-400 mt-1">本金: $${formatNumber(res.principalDue)}</div>
+              </td>
+            `;
+          }
+
+          return `
+            <td class="p-3 border-l border-slate-200 align-top">
+              <div class="space-y-1 text-xs">
+                <!-- 待還 -->
+                <div class="flex justify-between items-center text-slate-500">
+                  <span class="text-[10px] text-slate-400">待還:</span>
+                  <span>
+                    <span class="text-amber-600 font-medium">${formatNumber(res.totalInterestDue)}</span>
+                    <span class="text-slate-300">/</span>
+                    <span class="text-slate-600">${formatNumber(res.principalDue)}</span>
+                  </span>
+                </div>
+                <!-- 實還 -->
+                <div class="flex justify-between items-center bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">
+                  <span class="text-[10px] text-indigo-500 font-semibold">實還:</span>
+                  <span class="flex items-center gap-1">
+                    <span class="text-indigo-600 font-bold">${formatNumber(res.interestPaid)}</span>
+                    <span class="text-slate-300">/</span>
+                    <span class="text-emerald-600 font-bold">${formatNumber(res.principalPaid)}</span>
+                    ${res.adjusted > 0 ? `<span class="bg-amber-100 text-amber-800 text-[9px] px-1 rounded font-bold" title="尾差自動補入 +${res.adjusted}">+${res.adjusted}</span>` : ''}
+                  </span>
+                </div>
+                <!-- 未還 -->
+                <div class="flex justify-between items-center text-slate-500">
+                  <span class="text-[10px] text-slate-400">未還:</span>
+                  <span>
+                    <span class="${res.unpaidInterest > 0 ? 'text-rose-600 font-semibold' : 'text-slate-400'}">${formatNumber(res.unpaidInterest)}</span>
+                    <span class="text-slate-300">/</span>
+                    <span class="${res.unpaidPrincipal > 0 ? 'text-slate-700' : 'text-slate-400'}">${formatNumber(res.unpaidPrincipal)}</span>
+                  </span>
+                </div>
+              </div>
+            </td>
+          `;
+        }).join('');
+
+        return `
+          <tr class="hover:bg-slate-50/80 transition">
+            <td class="p-3 text-center font-bold text-slate-400">${e.index}</td>
+            <td class="p-3 font-medium text-slate-700">${formatDate(e.date)}</td>
+            <td class="p-3 text-right font-bold text-indigo-600">$${formatNumber(e.payment)}</td>
+            ${colsHtml}
+            <td class="p-3 border-l border-slate-200 text-right align-middle">
+              <div class="font-bold text-rose-600 text-sm">息 $${formatNumber(periodUnpaidInt)}</div>
+              <div class="font-medium text-slate-600 text-xs mt-0.5">本 $${formatNumber(periodUnpaidPrinc)}</div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      // 更新指標
+      updateKpiStats(events, curContracts);
+    }
+
+    function updateKpiStats(events, curContracts) {
+      const totalInitialPrincipal = curContracts.reduce((sum, c) => sum + c.principal, 0);
+      const totalPaid = repayments.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+      
+      const lastEvent = events[events.length - 1];
+      let endUnpaidPrincipal = 0;
+      let endUnpaidInterest = 0;
+
+      if (lastEvent) {
+        curContracts.forEach(c => {
+          endUnpaidPrincipal += lastEvent.contractResults[c.id].unpaidPrincipal;
+          endUnpaidInterest += lastEvent.contractResults[c.id].unpaidInterest;
+        });
+      } else {
+        endUnpaidPrincipal = totalInitialPrincipal;
+      }
+
+      document.getElementById('stat-total-principal').textContent = `$${formatNumber(totalInitialPrincipal)}`;
+      document.getElementById('stat-total-paid').textContent = `$${formatNumber(totalPaid)}`;
+      document.getElementById('stat-unpaid-principal').textContent = `$${formatNumber(endUnpaidPrincipal)}`;
+      document.getElementById('stat-unpaid-interest').textContent = `$${formatNumber(endUnpaidInterest)}`;
+    }
+
+    // 匯出 CSV 報表
+    function exportToCSV() {
+      const { events, contracts: curContracts } = calculateSchedule();
+      let csv = "\uFEFF序號,還款日期,實還金額,";
+      
+      curContracts.forEach(c => {
+        csv += `${c.name}待還利息,${c.name}待還本金,${c.name}實還利息,${c.name}實還本金,${c.name}未還利息,${c.name}未還本金,`;
+      });
+      csv += "總未還利息,總未還本金\n";
+
+      events.forEach(e => {
+        csv += `${e.index},${formatDate(e.date)},${e.payment},`;
+        let totUnpaidInt = 0;
+        let totUnpaidPrinc = 0;
+
+        curContracts.forEach(c => {
+          const res = e.contractResults[c.id];
+          totUnpaidInt += res.unpaidInterest;
+          totUnpaidPrinc += res.unpaidPrincipal;
+          csv += `${res.totalInterestDue},${res.principalDue},${res.interestPaid},${res.principalPaid},${res.unpaidInterest},${res.unpaidPrincipal},`;
+        });
+        csv += `${totUnpaidInt},${totUnpaidPrinc}\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute("download", `借貸多合約還款沖銷明細_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // 初始化載入
+    window.addEventListener('DOMContentLoaded', () => {
+      renderAll();
+    });
+  </script>
+</body>
+</html>
