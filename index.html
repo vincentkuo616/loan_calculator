@@ -266,44 +266,54 @@
       renderAll();
     }
 
-    // 渲染合約輸入卡片
+    // 渲染合約輸入卡片 (修復日期欄位擠壓跑版問題)
     function renderContractsUI() {
       const container = document.getElementById('contracts-container');
       container.innerHTML = contracts.map(c => `
-        <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-          <div class="flex items-center justify-between gap-2">
-            <input type="text" value="${c.name}" class="font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none text-sm w-28"
+        <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+          <!-- 頂部：合約名稱與刪除 -->
+          <div class="flex items-center justify-between border-b border-slate-200/60 pb-2">
+            <input type="text" value="${c.name}" class="font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none text-sm w-36 px-0.5"
               onchange="updateContract(${c.id}, 'name', this.value)" />
-            <button onclick="removeContract(${c.id})" class="text-rose-500 hover:text-rose-700 text-xs px-2 py-0.5">刪除</button>
+            <button onclick="removeContract(${c.id})" class="text-rose-500 hover:text-rose-700 text-xs px-2 py-0.5 font-medium transition">刪除</button>
           </div>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+
+          <!-- 第一列：金額與計息條件 (3 等分) -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
             <div>
-              <span class="text-slate-500 block">借款本金</span>
-              <input type="number" value="${c.principal}" class="w-full border border-slate-300 rounded px-2 py-1 mt-0.5"
-                onchange="updateContract(${c.id}, 'principal', this.value)" />
+              <span class="text-slate-500 block mb-1">借款本金</span>
+              <div class="relative">
+                <span class="absolute left-2.5 top-1.5 text-slate-400 font-normal">$</span>
+                <input type="number" value="${c.principal}" class="w-full pl-6 pr-2 py-1.5 border border-slate-300 rounded-lg text-slate-800 font-medium focus:ring-1 focus:ring-indigo-500 outline-none bg-white"
+                  onchange="updateContract(${c.id}, 'principal', this.value)" />
+              </div>
             </div>
             <div>
-              <span class="text-slate-500 block">利息模式</span>
-              <select class="w-full border border-slate-300 rounded px-2 py-1 mt-0.5"
+              <span class="text-slate-500 block mb-1">利息模式</span>
+              <select class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 bg-white focus:ring-1 focus:ring-indigo-500 outline-none"
                 onchange="updateContract(${c.id}, 'type', this.value)">
                 <option value="ANNUAL" ${c.type === 'ANNUAL' ? 'selected' : ''}>年息 (%)</option>
                 <option value="FIXED" ${c.type === 'FIXED' ? 'selected' : ''}>固定金額/期</option>
               </select>
             </div>
             <div>
-              <span class="text-slate-500 block">${c.type === 'ANNUAL' ? '年利率 (%)' : '每期固定利息'}</span>
-              <input type="number" value="${c.value}" class="w-full border border-slate-300 rounded px-2 py-1 mt-0.5"
+              <span class="text-slate-500 block mb-1">${c.type === 'ANNUAL' ? '年利率 (%)' : '每期固定利息 ($)'}</span>
+              <input type="number" value="${c.value}" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 font-medium focus:ring-1 focus:ring-indigo-500 outline-none bg-white"
                 onchange="updateContract(${c.id}, 'value', this.value)" />
             </div>
+          </div>
+
+          <!-- 第二列：合約起訖日 (各佔一半，空間充足不跑版) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs pt-1 border-t border-slate-100">
             <div>
-              <span class="text-slate-500 block">起訖日期</span>
-              <div class="flex items-center gap-1 mt-0.5">
-                <input type="date" value="${c.start}" class="w-full border border-slate-300 rounded px-1 py-1 text-[11px]"
-                  onchange="updateContract(${c.id}, 'start', this.value)" />
-                <span class="text-slate-400">~</span>
-                <input type="date" value="${c.end}" class="w-full border border-slate-300 rounded px-1 py-1 text-[11px]"
-                  onchange="updateContract(${c.id}, 'end', this.value)" />
-              </div>
+              <span class="text-slate-500 block mb-1">合約起始日</span>
+              <input type="date" value="${c.start}" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:ring-1 focus:ring-indigo-500 outline-none"
+                onchange="updateContract(${c.id}, 'start', this.value)" />
+            </div>
+            <div>
+              <span class="text-slate-500 block mb-1">合約到期日</span>
+              <input type="date" value="${c.end}" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:ring-1 focus:ring-indigo-500 outline-none"
+                onchange="updateContract(${c.id}, 'end', this.value)" />
             </div>
           </div>
         </div>
