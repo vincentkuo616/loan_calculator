@@ -17,7 +17,7 @@
 <body class="bg-slate-50 text-slate-800 min-h-screen p-4 md:p-8">
   <div class="max-w-7xl mx-auto space-y-6">
     
-    <!-- 頂部標題 -->
+    <!-- 頂部標題與操作按鈕 -->
     <header class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
       <div>
         <h1 class="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -118,7 +118,6 @@
               <th class="p-3 text-center w-12">#</th>
               <th class="p-3 w-28">還款日期</th>
               <th class="p-3 w-28 text-right">實還金額</th>
-              <!-- 動態生成各合約欄位 -->
               <th class="p-3 border-l border-slate-200 text-right w-40">全案未還餘額 (息 / 本)</th>
             </tr>
           </thead>
@@ -145,7 +144,7 @@
       { id: "r3", date: "2024-04-10", amount: 12000 }
     ];
 
-    // 產生空白合約範本 (預設起訖日為今天至一年後)
+    // 產生空白合約範本
     function getBlankContract() {
       const today = new Date().toISOString().slice(0, 10);
       const nextYear = new Date();
@@ -155,11 +154,11 @@
       ];
     }
 
-    // ★ 初次進入頁面：預設為空白乾淨狀態
+    // 初次進入頁面：預設為空白乾淨狀態
     let contracts = getBlankContract();
     let repayments = [];
 
-    // ★ 清空全部資料函式
+    // 清空全部資料
     function clearAll() {
       if (confirm("確定要清空所有合約與還款紀錄嗎？")) {
         contracts = getBlankContract();
@@ -168,15 +167,12 @@
       }
     }
 
-    // 載入預設範例
+    // 載入預設範例 (修復單一宣告)
     function resetToDefault() {
       contracts = JSON.parse(JSON.stringify(defaultContracts));
       repayments = JSON.parse(JSON.stringify(defaultRepayments));
       renderAll();
     }
-
-    let contracts = JSON.parse(JSON.stringify(defaultContracts));
-    let repayments = JSON.parse(JSON.stringify(defaultRepayments));
 
     // 日期工具
     function parseDate(dateStr) {
@@ -202,24 +198,21 @@
       return Math.round(ms / (1000 * 60 * 60 * 24));
     }
 
-    // 重設範例
-    function resetToDefault() {
-      contracts = JSON.parse(JSON.stringify(defaultContracts));
-      repayments = JSON.parse(JSON.stringify(defaultRepayments));
-      renderAll();
-    }
-
     // 合約管理
     function addContract() {
       const nextId = contracts.length > 0 ? Math.max(...contracts.map(c => c.id)) + 1 : 1;
+      const today = new Date().toISOString().slice(0, 10);
+      const nextYear = new Date();
+      nextYear.setFullYear(nextYear.getFullYear() + 1);
+
       contracts.push({
         id: nextId,
         name: `合約 ${nextId}`,
-        principal: 500000,
-        start: "2024-01-01",
-        end: "2025-01-01",
+        principal: 0,
+        start: today,
+        end: nextYear.toISOString().slice(0, 10),
         type: "ANNUAL",
-        value: 10
+        value: 0
       });
       renderAll();
     }
@@ -247,7 +240,7 @@
     // 還款事件管理
     function addRepaymentRow() {
       const lastRep = repayments[repayments.length - 1];
-      let newDate = "2024-05-10";
+      let newDate = new Date().toISOString().slice(0, 10);
       if (lastRep) {
         const d = parseDate(lastRep.date);
         d.setMonth(d.getMonth() + 1);
@@ -277,7 +270,7 @@
       renderAll();
     }
 
-    // 一鍵生成標準 14 期還款日 (每月10號至最晚收尾期 2025/03/10)
+    // 產生標準期
     function generateStandardSchedule() {
       repayments = [
         { id: "r1", date: "2024-02-10", amount: 5000 },
@@ -298,19 +291,17 @@
       renderAll();
     }
 
-    // 渲染合約輸入卡片 (修復日期欄位擠壓跑版問題)
+    // 渲染合約輸入卡片 (雙列版面避免跑版)
     function renderContractsUI() {
       const container = document.getElementById('contracts-container');
       container.innerHTML = contracts.map(c => `
         <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-          <!-- 頂部：合約名稱與刪除 -->
           <div class="flex items-center justify-between border-b border-slate-200/60 pb-2">
             <input type="text" value="${c.name}" class="font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 outline-none text-sm w-36 px-0.5"
               onchange="updateContract(${c.id}, 'name', this.value)" />
             <button onclick="removeContract(${c.id})" class="text-rose-500 hover:text-rose-700 text-xs px-2 py-0.5 font-medium transition">刪除</button>
           </div>
 
-          <!-- 第一列：金額與計息條件 (3 等分) -->
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
             <div>
               <span class="text-slate-500 block mb-1">借款本金</span>
@@ -335,7 +326,6 @@
             </div>
           </div>
 
-          <!-- 第二列：合約起訖日 (各佔一半，空間充足不跑版) -->
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs pt-1 border-t border-slate-100">
             <div>
               <span class="text-slate-500 block mb-1">合約起始日</span>
@@ -395,7 +385,6 @@
         };
       });
 
-      // 尾差補入 targetAmount 最大者
       let remainder = availableAmount - distributed;
       if (remainder > 0) {
         const sortedIndices = results
@@ -412,23 +401,20 @@
       return results;
     }
 
-    // 核心引擎：按時間線計算所有還款事件
+    // 核心計算引擎
     function calculateSchedule() {
       if (contracts.length === 0 || repayments.length === 0) {
         return { events: [], contracts: contracts };
       }
 
-      // 1. 將所有還款事件按日期由小到大排序 (Chronological sort)
       const sortedRepayments = [...repayments].sort((a, b) => parseDate(a.date) - parseDate(b.date));
 
-      // 2. 初始化各合約狀態
       let contractState = {};
       contracts.forEach(c => {
         contractState[c.id] = {
           unpaidPrincipal: c.principal,
           unpaidInterest: 0,
           lastInterestCalcDate: parseDate(c.start),
-          // 針對固定利息合約，預先產生 12 期結算里程碑（每月10號）
           fixedMilestones: []
         };
 
@@ -436,7 +422,6 @@
           const cStart = parseDate(c.start);
           let curYear = cStart.getFullYear();
           let curMonth = cStart.getMonth();
-          // 若起始日超過10號，第一個里程碑為次月10號
           let firstM = new Date(curYear, curMonth, 10, 12, 0, 0);
           if (firstM < cStart) {
             curMonth += 1;
@@ -458,7 +443,6 @@
         const eventDate = parseDate(rep.date);
         const cashAmount = rep.amount;
 
-        // 計算各合約當下的狀態與利息
         let currentDemands = [];
 
         contracts.forEach(c => {
@@ -466,25 +450,21 @@
           const cStart = parseDate(c.start);
           const cEnd = parseDate(c.end);
 
-          // 核心檢查 1：合約是否已生效？(還款日必須 >= 起始日)
           const isStarted = eventDate >= cStart;
           let interestDueThisTime = 0;
           let days = 0;
 
           if (isStarted && state.unpaidPrincipal > 0) {
             if (c.type === 'ANNUAL') {
-              // 計息終點取還款日與到期日較小者
               let calcEnd = eventDate > cEnd ? cEnd : eventDate;
               let calcStart = state.lastInterestCalcDate;
 
               if (calcStart < calcEnd) {
                 days = getDaysDiff(calcStart, calcEnd);
-                // 初始本金計息
                 interestDueThisTime = Math.round((c.principal * (c.value / 100) * days) / 365);
                 state.lastInterestCalcDate = calcEnd;
               }
             } else if (c.type === 'FIXED') {
-              // 檢查是否有未請領且已到達的月里程碑
               state.fixedMilestones.forEach(m => {
                 if (!m.billed && eventDate >= m.date) {
                   interestDueThisTime += c.value;
@@ -505,10 +485,9 @@
           });
         });
 
-        // 瀑布流分配還款現金
         let cashLeft = cashAmount;
 
-        // 階段一：償還前期累積未還利息 (僅限已生效合約)
+        // 階段一：清償前期欠息
         const overdueTargets = currentDemands.map(d => ({
           id: d.contractId,
           targetAmount: d.overdueInterest
@@ -517,7 +496,7 @@
         const overduePaidTotal = overdueAlloc.reduce((s, a) => s + a.paid, 0);
         cashLeft -= overduePaidTotal;
 
-        // 階段二：償還當期應計利息
+        // 階段二：清償當期利息
         const currentIntTargets = currentDemands.map(d => ({
           id: d.contractId,
           targetAmount: d.currentInterest
@@ -526,16 +505,16 @@
         const currentIntPaidTotal = currentIntAlloc.reduce((s, a) => s + a.paid, 0);
         cashLeft -= currentIntPaidTotal;
 
-        // 階段三：償還本金 (僅限已生效且仍有欠本之合約，依剩餘未還本金比例)
+        // 階段三：清償本金
         const principalTargets = currentDemands.map(d => ({
           id: d.contractId,
-          targetAmount: d.unpaidPrincipal // 未生效者為 0
+          targetAmount: d.unpaidPrincipal
         }));
         const principalAlloc = allocateProRata(cashLeft, principalTargets);
         const principalPaidTotal = principalAlloc.reduce((s, a) => s + a.paid, 0);
         cashLeft -= principalPaidTotal;
 
-        // 結算各合約並更新全局狀態
+        // 結算與更新
         let contractRowResults = {};
         contracts.forEach(c => {
           const demand = currentDemands.find(d => d.contractId === c.id);
@@ -550,7 +529,6 @@
           const princPaid = pA.paid;
           const newUnpaidPrinc = demand.actualUnpaidPrincipal - princPaid;
 
-          // 更新狀態
           contractState[c.id].unpaidInterest = newUnpaidInt;
           contractState[c.id].unpaidPrincipal = newUnpaidPrinc;
 
@@ -590,7 +568,7 @@
 
       const { events, contracts: curContracts } = calculateSchedule();
 
-      // 更新表頭
+      // 表頭更新
       const headerRow = document.getElementById('table-header-row');
       headerRow.innerHTML = `
         <th class="p-3 text-center w-12">#</th>
@@ -605,9 +583,8 @@
         <th class="p-3 border-l border-slate-200 text-right w-40">全案未還餘額 (息 / 本)</th>
       `;
 
-      // 渲染表身
+      // 表身更新
       const tbody = document.getElementById('table-body');
-      // 若尚未建立任何還款紀錄時的提示
       if (events.length === 0) {
         tbody.innerHTML = `
           <tr>
@@ -619,6 +596,7 @@
         updateKpiStats([], curContracts);
         return;
       }
+
       tbody.innerHTML = events.map(e => {
         let periodUnpaidInt = 0;
         let periodUnpaidPrinc = 0;
@@ -628,7 +606,6 @@
           periodUnpaidInt += res.unpaidInterest;
           periodUnpaidPrinc += res.unpaidPrincipal;
 
-          // 若合約尚未開始
           if (!res.isStarted) {
             return `
               <td class="p-3 border-l border-slate-200 text-center align-middle bg-slate-50/50">
@@ -643,7 +620,6 @@
           return `
             <td class="p-3 border-l border-slate-200 align-top">
               <div class="space-y-1 text-xs">
-                <!-- 待還 -->
                 <div class="flex justify-between items-center text-slate-500">
                   <span class="text-[10px] text-slate-400">待還:</span>
                   <span>
@@ -652,7 +628,6 @@
                     <span class="text-slate-600">${formatNumber(res.principalDue)}</span>
                   </span>
                 </div>
-                <!-- 實還 -->
                 <div class="flex justify-between items-center bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">
                   <span class="text-[10px] text-indigo-500 font-semibold">實還:</span>
                   <span class="flex items-center gap-1">
@@ -662,7 +637,6 @@
                     ${res.adjusted > 0 ? `<span class="bg-amber-100 text-amber-800 text-[9px] px-1 rounded font-bold" title="尾差自動補入 +${res.adjusted}">+${res.adjusted}</span>` : ''}
                   </span>
                 </div>
-                <!-- 未還 -->
                 <div class="flex justify-between items-center text-slate-500">
                   <span class="text-[10px] text-slate-400">未還:</span>
                   <span>
@@ -690,7 +664,6 @@
         `;
       }).join('');
 
-      // 更新指標
       updateKpiStats(events, curContracts);
     }
 
@@ -750,7 +723,7 @@
       document.body.removeChild(link);
     }
 
-    // 初始化載入
+    // 初次載入
     window.addEventListener('DOMContentLoaded', () => {
       renderAll();
     });
